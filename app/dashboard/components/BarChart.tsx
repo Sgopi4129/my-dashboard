@@ -3,11 +3,12 @@
 
 import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
+import { DataItem } from '../types';
 
 interface BarChartProps {
-  data: any[];
-  xKey: string;
-  yKey: string;
+  data: DataItem[];
+  xKey: keyof DataItem;
+  yKey: keyof DataItem;
   title: string;
 }
 
@@ -17,63 +18,68 @@ export default function BarChart({ data, xKey, yKey, title }: BarChartProps) {
   useEffect(() => {
     if (!data.length || !svgRef.current) return;
 
-    const margin = { top: 20, right: 20, bottom: 50, left: 50 };
+    const margin = { top: 40, right: 20, bottom: 50, left: 50 };
     const width = 600 - margin.left - margin.right;
     const height = 400 - margin.top - margin.bottom;
 
-    const svg = d3.select(svgRef.current)
+    // Clear previous content
+    d3.select(svgRef.current).selectAll('*').remove();
+
+    // Create the SVG container
+    const svg = d3
+      .select<SVGSVGElement, unknown>(svgRef.current)
       .attr('width', width + margin.left + margin.right)
       .attr('height', height + margin.top + margin.bottom)
-      .selectAll('g').data([null]).join('g')
+      .append<SVGGElement>('g')
       .attr('transform', `translate(${margin.left},${margin.top})`);
 
-    const aggregatedData = d3.rollup(data, v => d3.mean(v, d => d[yKey]), d => d[xKey]);
-    const chartData = Array.from(aggregatedData, ([key, value]) => ({ key, value }));
-
-    const x = d3.scaleBand()
-      .domain(chartData.map(d => d.key))
+    const x = d3
+      .scaleBand()
+      .domain(data.map((d) => String(d[xKey])))
       .range([0, width])
       .padding(0.1);
 
-    const y = d3.scaleLinear()
-      .domain([0, d3.max(chartData, d => d.value) || 0])
+    const y = d3
+      .scaleLinear()
+      .domain([0, d3.max(data, (d) => Number(d[yKey])) || 0])
       .nice()
       .range([height, 0]);
 
-    svg.selectAll('.bar')
-      .data(chartData)
+    svg
+      .selectAll('.bar')
+      .data(data)
       .join('rect')
       .attr('class', 'bar')
-      .attr('x', d => x(d.key) || 0)
-      .attr('y', d => y(d.value))
+      .attr('x', (d) => x(String(d[xKey])) || 0)
+      .attr('y', (d) => y(Number(d[yKey])))
       .attr('width', x.bandwidth())
-      .attr('height', d => height - y(d.value))
+      .attr('height', (d) => height - y(Number(d[yKey])))
       .attr('fill', 'steelblue');
 
-    svg.selectAll('.x-axis')
-      .data([null])
-      .join('g')
+    // Add x-axis
+    svg
+      .append('g')
       .attr('class', 'x-axis')
       .attr('transform', `translate(0,${height})`)
-      .call(d3.axisBottom(x))
+      .call(d3.axisBottom(x) as unknown as (selection: d3.Selection<SVGGElement, unknown, null, undefined>) => void)
       .selectAll('text')
       .attr('transform', 'rotate(-45)')
-      .style('text-anchor', 'end');
+      .attr('text-anchor', 'end');
 
-    svg.selectAll('.y-axis')
-      .data([null])
-      .join('g')
+    // Add y-axis
+    svg
+      .append('g')
       .attr('class', 'y-axis')
       .call(d3.axisLeft(y));
 
-    svg.selectAll('.title')
-      .data([title])
-      .join('text')
+    // Add title
+    svg
+      .append('text')
       .attr('class', 'title')
       .attr('x', width / 2)
       .attr('y', -10)
       .attr('text-anchor', 'middle')
-      .text(d => d);
+      .text(title);
   }, [data, xKey, yKey, title]);
 
   return <svg ref={svgRef}></svg>;
