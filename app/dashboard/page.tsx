@@ -10,6 +10,7 @@ import ScatterPlot from './components/ScatterPlot';
 import WorldMap from './components/WorldMap';
 import { Box, Typography, CircularProgress, Alert, Button } from '@mui/material';
 import { DataItem, FilterOptions, FiltersState } from './types';
+import { AxiosInstance, AxiosError as AxiosRetryError } from 'axios';
 
 // Configure axios instance with retries for Render spin-down
 const api = axios.create({
@@ -17,16 +18,22 @@ const api = axios.create({
   timeout: 60000, // 60 seconds to handle spin-down
 });
 
-axiosRetry(api, {
+interface RetryConfig {
+  retries: number;
+  retryDelay: (retryCount: number) => number;
+  retryCondition: (error: AxiosRetryError) => boolean;
+}
+
+axiosRetry(api as AxiosInstance, {
   retries: 3,
-  retryDelay: (retryCount) => retryCount * 2000, // 2s, 4s, 6s
-  retryCondition: (error) => {
+  retryDelay: (retryCount: number): number => retryCount * 2000, // 2s, 4s, 6s
+  retryCondition: (error: AxiosRetryError): boolean => {
     return (
       axiosRetry.isNetworkOrIdempotentRequestError(error) ||
-      error.response?.status >= 500
+      (error.response?.status ?? 0) >= 500
     );
   },
-});
+} as RetryConfig);
 
 // Warm up the backend to reduce spin-down latency
 const warmupBackend = async () => {
