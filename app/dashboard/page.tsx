@@ -13,26 +13,30 @@ const BarChart = lazy(() => import('./components/BarChart'));
 const ScatterPlot = lazy(() => import('./components/ScatterPlot'));
 const WorldMap = lazy(() => import('./components/WorldMap'));
 
-// Validate environment variables
+// Environment variables
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-const WEBSOCKET_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL || API_URL.replace('http', 'ws').replace('https', 'wss');
+const POLLING_INTERVAL = parseInt(process.env.NEXT_PUBLIC_POLLING_INTERVAL || '5000', 10); // Default 5s
+const USE_POLLING = process.env.NEXT_PUBLIC_USE_POLLING === 'true'; // Enable polling for Vercel
+
+// Validate environment variables
 if (!API_URL) {
-  console.error('NEXT_PUBLIC_API_URL is not defined');
+  console.error('NEXT_PUBLIC_API_URL is not defined. API requests will fail.');
 }
 
 // Axios instance with production-ready config
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 60000,
+  timeout: 30000, // Reduced timeout for serverless environments
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
+    'Cache-Control': 'no-cache', // Ensure fresh data, but allow backend caching
   },
 });
 
 axiosRetry(api, {
   retries: 3,
-  retryDelay: (retryCount: number) => retryCount * 2000,
+  retryDelay: (retryCount: number) => retryCount * 1000, // Shorter delay for serverless
   retryCondition: (error: AxiosError) => {
     return (
       axiosRetry.isNetworkOrIdempotentRequestError(error) ||
@@ -42,10 +46,10 @@ axiosRetry(api, {
 });
 
 // Warm up backend with retry logic
-const warmupBackend = async (attempts = 3, delay = 2000) => {
+const warmupBackend = async (attempts = 3, delay = 1000) => {
   for (let i = 0; i < attempts; i++) {
     try {
-      await api.get('/warmup');
+      await api.get('/warmup', { timeout: 5000 }); // Short timeout for warmup
       console.info('Backend warmed up successfully');
       return true;
     } catch (error) {
@@ -57,32 +61,6 @@ const warmupBackend = async (attempts = 3, delay = 2000) => {
   }
   console.error('All warm-up attempts failed. Backend may be slow to respond.');
   return false;
-};
-
-// WebSocket setup for real-time updates
-const setupWebSocket = (onMessage: (data: { data: DataItem[]; filters: FilterOptions }) => void) => {
-  try {
-    const socket = new WebSocket(WEBSOCKET_URL);
-    socket.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        onMessage(message);
-        console.info('WebSocket message received:', message);
-      } catch (error) {
-        console.error('WebSocket message parsing error:', error);
-      }
-    };
-    socket.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-    socket.onclose = () => {
-      console.warn('WebSocket connection closed');
-    };
-    return socket;
-  } catch (error) {
-    console.error('Failed to initialize WebSocket:', error);
-    return null;
-  }
 };
 
 export default function Dashboard() {
@@ -99,7 +77,6 @@ export default function Dashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [useWebSocket, setUseWebSocket] = useState(true); // Toggle WebSocket vs. HTTP
 
   // Debounced fetchData function
   const fetchData = useCallback(
@@ -118,7 +95,10 @@ export default function Dashboard() {
           }
         });
         const response = await api.get<{ data: DataItem[]; filters: FilterOptions }>(
-          `/api/data?${params}`
+          `/api/data?${params}`,
+          {
+            headers: { 'If-Modified-Since': new Date().toUTCString() }, // Cache busting
+          }
         );
         setData(response.data.data);
         setFilterOptions(response.data.filters);
@@ -150,30 +130,20 @@ export default function Dashboard() {
     []
   );
 
-  // Initial fetch and WebSocket setup
+  // Initial fetch and optional polling
   useEffect(() => {
-    let socket: WebSocket | null = null;
+    let interval: NodeJS.Timeout | null = null;
 
     const initialize = async () => {
       const warmedUp = await warmupBackend();
       if (!warmedUp) {
         setError('Backend may be slow to respond. Retrying...');
       }
+      fetchData();
 
-      // Try WebSocket for real-time updates
-      if (useWebSocket) {
-        socket = setupWebSocket((message) => {
-          setData(message.data);
-          setFilterOptions(message.filters);
-          setLoading(false);
-        });
-        if (!socket) {
-          console.warn('WebSocket unavailable, falling back to HTTP');
-          setUseWebSocket(false);
-          fetchData();
-        }
-      } else {
-        fetchData();
+      // Enable polling if configured (e.g., for Vercel)
+      if (USE_POLLING) {
+        interval = setInterval(fetchData, POLLING_INTERVAL);
       }
     };
 
@@ -181,12 +151,12 @@ export default function Dashboard() {
 
     // Cleanup
     return () => {
-      if (socket) {
-        socket.close();
+      if (interval) {
+        clearInterval(interval);
       }
       fetchData.cancel(); // Cancel debounced calls
     };
-  }, [fetchData, useWebSocket]);
+  }, [fetchData]);
 
   // Memoize chart components to prevent unnecessary re-renders
   const chartComponents = useMemo(
