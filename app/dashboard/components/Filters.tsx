@@ -1,9 +1,18 @@
-// app/dashboard/components/Filters.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Box, FormControl, InputLabel, Select, MenuItem, Chip, OutlinedInput, SelectChangeEvent } from '@mui/material';
-import { FilterOptions, FiltersState } from '../types';
+import { useCallback } from 'react';
+import {
+  Box,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Checkbox,
+  FormControlLabel,
+  TextField,
+} from '@mui/material';
+import { FiltersState, FilterOptions } from '../types';
+import { useState as reactUseState } from 'react';
 
 interface FiltersProps {
   options: FilterOptions;
@@ -11,60 +20,78 @@ interface FiltersProps {
 }
 
 export default function Filters({ options, onFilterChange }: FiltersProps) {
-  const [filters, setFilters] = useState<FiltersState>({});
+  const [filters, setFilters] = reactUseState<FiltersState>({});
 
-  useEffect(() => {
-    console.log('Filter options:', options);
-    console.log('Current filters:', filters);
-    onFilterChange(filters);
-  }, [filters, onFilterChange, options]);
-
-  const handleChange = (filterKey: string) => (event: SelectChangeEvent<string[]>) => {
-    const value = event.target.value as string[];
-    const updatedFilters: FiltersState = { ...filters, [filterKey]: value.length > 0 ? value : undefined };
-    setFilters(updatedFilters);
-  };
-
-  const filterKeys = [
-    { key: 'end_years', label: 'End Year' },
-    { key: 'topics', label: 'Topic' },
-    { key: 'sectors', label: 'Sector' },
-    { key: 'regions', label: 'Region' },
-    { key: 'pestles', label: 'PESTLE' },
-    { key: 'sources', label: 'Source' },
-    { key: 'countries', label: 'Country' },
-  ];
+  const handleChange = useCallback(
+    (key: keyof FiltersState, value: string | string[]) => {
+      const newFilters = { ...filters, [key]: value };
+      setFilters(newFilters);
+      onFilterChange(newFilters);
+    },
+    [filters, onFilterChange]
+  );
 
   return (
-    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-      {filterKeys.map(({ key, label }) => (
-        <FormControl key={key} sx={{ minWidth: 200 }}>
-          <InputLabel>{label}</InputLabel>
-          <Select
-            multiple
-            value={(filters[key] as string[]) || []}
-            onChange={handleChange(key)}
-            input={<OutlinedInput label={label} />}
-            renderValue={(selected) => (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                {(selected as string[]).map((value) => (
-                  <Chip key={value} label={value} />
-                ))}
-              </Box>
-            )}
-          >
-            {options[key as keyof FilterOptions]?.length > 0 ? (
-              options[key as keyof FilterOptions].map((option: string) => (
-                <MenuItem key={option} value={option}>
-                  {option}
-                </MenuItem>
-              ))
-            ) : (
-              <MenuItem disabled>No options available</MenuItem>
-            )}
-          </Select>
-        </FormControl>
-      ))}
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <FormControl fullWidth>
+        <InputLabel id="topics-label">Topics</InputLabel>
+        <Select
+          labelId="topics-label"
+          id="topics"
+          name="topics"
+          multiple
+          value={filters.topics || []}
+          onChange={(e) => handleChange('topics', e.target.value as string[])}
+          renderValue={(selected) => (selected as string[]).join(', ')}
+        >
+          {options.topics.map((topic) => (
+            <MenuItem key={topic} value={topic}>
+              <Checkbox
+                id={`topic-checkbox-${topic}`}
+                name={`topic-checkbox-${topic}`}
+                checked={(filters.topics || []).includes(topic)}
+              />
+              {topic}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+
+      <TextField
+        id="end_year"
+        name="end_year"
+        label="End Year"
+        value={filters.end_year || ''}
+        onChange={(e) => handleChange('end_year', e.target.value)}
+        fullWidth
+      />
+
+      <Box>
+        {options.regions.map((region) => (
+          <FormControlLabel
+            key={region}
+            control={
+              <Checkbox
+                id={`region-checkbox-${region}`}
+                name={`region-checkbox-${region}`}
+                checked={(filters.regions || []).includes(region)}
+                onChange={(e) => {
+                  const newRegions = e.target.checked
+                    ? [...(filters.regions || []), region]
+                    : (filters.regions || []).filter((r) => r !== region);
+                  handleChange('regions', newRegions);
+                }}
+              />
+            }
+            label={region}
+            labelPlacement="end"
+          />
+        ))}
+      </Box>
     </Box>
   );
+}
+
+function useState<T>(arg0: {}): [any, any] {
+  throw new Error('Function not implemented.');
 }
