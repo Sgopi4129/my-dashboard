@@ -38,8 +38,7 @@ axiosRetry(api, {
   retryCondition: (error: AxiosError) => {
     return (
       axiosRetry.isNetworkOrIdempotentRequestError(error) ||
-      (error.response?.status ?? 0) >= 500 ||
-      error.response?.status === 429  // Retry on rate limit
+      (error.response?.status ?? 0) >= 500
     );
   },
 });
@@ -55,8 +54,6 @@ const warmupBackend = async (attempts = 2, delay = 1000) => {
       if (error instanceof AxiosError) {
         if (error.code === 'ECONNABORTED') {
           errorMessage = 'Warm-up timed out';
-        } else if (error.response?.status === 429) {
-          errorMessage = 'Rate limit exceeded. Please try again later.';
         } else if (!error.response && error.request) {
           errorMessage = 'CORS error: Missing Access-Control-Allow-Origin header';
         } else {
@@ -117,9 +114,7 @@ export default function Dashboard() {
       } catch (error) {
         let errorMessage = 'Failed to fetch data. Please try again later.';
         if (error instanceof AxiosError) {
-          if (error.response?.status === 429) {
-            errorMessage = 'Rate limit exceeded. Please wait and try again.';
-          } else if (!error.response && error.request) {
+          if (!error.response && error.request) {
             errorMessage = 'CORS error: Backend is not responding or misconfigured.';
           } else {
             errorMessage = error.response
