@@ -2,89 +2,82 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import * as d3 from 'd3';
+import Chart from 'chart.js/auto';
+import { Box } from '@mui/material';
 import { DataItem } from '../types';
-
-type NumericKeys<T> = {
-  [K in keyof T]: T[K] extends number ? K : never;
-}[keyof T];
 
 interface ScatterPlotProps {
   data: DataItem[];
-  xKey: NumericKeys<DataItem>;
-  yKey: NumericKeys<DataItem>;
-  colorKey: NumericKeys<DataItem>;
+  xKey: keyof DataItem;
+  yKey: keyof DataItem;
+  colorKey: keyof DataItem;
   title: string;
 }
 
-export default function ScatterPlot({ data, xKey, yKey, colorKey, title }: ScatterPlotProps) {
-  const svgRef = useRef<SVGSVGElement | null>(null);
+const ScatterPlot = ({ data, xKey, yKey, colorKey, title }: ScatterPlotProps) => {
+  const chartRef = useRef<HTMLCanvasElement>(null);
+  const chartInstanceRef = useRef<Chart | null>(null);
 
   useEffect(() => {
-    if (!data.length || !svgRef.current) return;
+    if (chartRef.current && data.length > 0) {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+      }
 
-    const margin = { top: 40, right: 20, bottom: 50, left: 50 };
-    const width = 600 - margin.left - margin.right;
-    const height = 400 - margin.top - margin.bottom;
+      const ctx = chartRef.current.getContext('2d');
+      if (ctx) {
+        chartInstanceRef.current = new Chart(ctx, {
+          type: 'scatter',
+          data: {
+            datasets: [
+              {
+                label: title,
+                data: data.map((item) => ({
+                  x: Number(item[xKey]),
+                  y: Number(item[yKey]),
+                  backgroundColor: `rgba(255, 99, 132, ${Number(item[colorKey]) / 100})`,
+                })),
+                pointRadius: 5,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { title: { display: true, text: String(xKey) } }, // Cast to string
+              y: { title: { display: true, text: String(yKey) } }, // Cast to string
+            },
+            plugins: {
+              title: { display: true, text: title },
+            },
+          },
+        });
+      }
+    }
 
-    // Clear previous content
-    d3.select(svgRef.current).selectAll('*').remove();
-
-    // Create the SVG container
-    const svg = d3
-      .select<SVGSVGElement, unknown>(svgRef.current)
-      .attr('width', width + margin.left + margin.right)
-      .attr('height', height + margin.top + margin.bottom)
-      .append<SVGGElement>('g')
-      .attr('transform', `translate(${margin.left},${margin.top})`);
-
-    const x = d3
-      .scaleLinear()
-      .domain(d3.extent(data, (d) => d[xKey]) as [number, number])
-      .nice()
-      .range([0, width]);
-
-    const y = d3
-      .scaleLinear()
-      .domain(d3.extent(data, (d) => d[yKey]) as [number, number])
-      .nice()
-      .range([height, 0]);
-
-    const color = d3
-      .scaleSequential(d3.interpolateBlues)
-      .domain(d3.extent(data, (d) => d[colorKey]) as [number, number]);
-
-    svg
-      .selectAll('circle')
-      .data(data)
-      .join('circle')
-      .attr('cx', (d) => x(d[xKey]))
-      .attr('cy', (d) => y(d[yKey]))
-      .attr('r', 5)
-      .attr('fill', (d) => color(d[colorKey]));
-
-    // Add x-axis
-    svg
-      .append('g')
-      .attr('class', 'x-axis')
-      .attr('transform', `translate(0,${height})`)
-      .call(d3.axisBottom(x) as unknown as (selection: d3.Selection<SVGGElement, unknown, null, undefined>) => void);
-
-    // Add y-axis
-    svg
-      .append('g')
-      .attr('class', 'y-axis')
-      .call(d3.axisLeft(y) as unknown as (selection: d3.Selection<SVGGElement, unknown, null, undefined>) => void);
-
-    // Add title
-    svg
-      .append('text')
-      .attr('class', 'title')
-      .attr('x', width / 2)
-      .attr('y', -10)
-      .attr('text-anchor', 'middle')
-      .text(title);
+    return () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+      }
+    };
   }, [data, xKey, yKey, colorKey, title]);
 
-  return <svg ref={svgRef}></svg>;
-}
+  useEffect(() => {
+    const handleResize = () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.resize();
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  return (
+    <Box sx={{ position: 'relative', width: '100%', height: '40vh' }}>
+      <canvas ref={chartRef} />
+    </Box>
+  );
+};
+
+export default ScatterPlot;

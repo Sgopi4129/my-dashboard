@@ -1,9 +1,9 @@
 // app/dashboard/components/Filters.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, FormControl, InputLabel, Select, MenuItem, Chip, OutlinedInput, SelectChangeEvent } from '@mui/material';
-import { FilterOptions, FiltersState } from '../types'; // Import shared types
+import { FilterOptions, FiltersState } from '../types';
 
 interface FiltersProps {
   options: FilterOptions;
@@ -13,11 +13,16 @@ interface FiltersProps {
 export default function Filters({ options, onFilterChange }: FiltersProps) {
   const [filters, setFilters] = useState<FiltersState>({});
 
+  useEffect(() => {
+    console.log('Filter options:', options);
+    console.log('Current filters:', filters);
+    onFilterChange(filters);
+  }, [filters, onFilterChange, options]);
+
   const handleChange = (filterKey: string) => (event: SelectChangeEvent<string[]>) => {
-    const value = event.target.value as string | string[];
-    const updatedFilters: FiltersState = { ...filters, [filterKey]: value };
+    const value = event.target.value as string[];
+    const updatedFilters: FiltersState = { ...filters, [filterKey]: value.length > 0 ? value : undefined };
     setFilters(updatedFilters);
-    onFilterChange(updatedFilters);
   };
 
   const filterKeys = [
@@ -48,11 +53,15 @@ export default function Filters({ options, onFilterChange }: FiltersProps) {
               </Box>
             )}
           >
-            {(options[key as keyof FilterOptions] || []).map((option: string) => (
-              <MenuItem key={option} value={option}>
-                {option}
-              </MenuItem>
-            ))}
+            {options[key as keyof FilterOptions]?.length > 0 ? (
+              options[key as keyof FilterOptions].map((option: string) => (
+                <MenuItem key={option} value={option}>
+                  {option}
+                </MenuItem>
+              ))
+            ) : (
+              <MenuItem disabled>No options available</MenuItem>
+            )}
           </Select>
         </FormControl>
       ))}

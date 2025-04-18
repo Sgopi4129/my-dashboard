@@ -2,7 +2,8 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import * as d3 from 'd3';
+import Chart from 'chart.js/auto';
+import { Box } from '@mui/material';
 import { DataItem } from '../types';
 
 interface BarChartProps {
@@ -12,75 +13,83 @@ interface BarChartProps {
   title: string;
 }
 
-export default function BarChart({ data, xKey, yKey, title }: BarChartProps) {
-  const svgRef = useRef<SVGSVGElement | null>(null);
+const BarChart = ({ data, xKey, yKey, title }: BarChartProps) => {
+  const chartRef = useRef<HTMLCanvasElement>(null);
+  const chartInstanceRef = useRef<Chart | null>(null);
 
   useEffect(() => {
-    if (!data.length || !svgRef.current) return;
+    if (chartRef.current && data.length > 0) {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+      }
 
-    const margin = { top: 40, right: 20, bottom: 50, left: 50 };
-    const width = 600 - margin.left - margin.right;
-    const height = 400 - margin.top - margin.bottom;
+      // Create unique labels without spread operator to avoid TS2802
+      const labelSet = new Set<string>();
+      data.forEach((item) => {
+        const label = item[xKey]?.toString() || '';
+        if (label) labelSet.add(label);
+      });
+      const labels = Array.from(labelSet);
 
-    // Clear previous content
-    d3.select(svgRef.current).selectAll('*').remove();
+      const values = labels.map((label) =>
+        data
+          .filter((item) => item[xKey]?.toString() === label)
+          .reduce((sum, item) => sum + (Number(item[yKey]) || 0), 0)
+      );
 
-    // Create the SVG container
-    const svg = d3
-      .select<SVGSVGElement, unknown>(svgRef.current)
-      .attr('width', width + margin.left + margin.right)
-      .attr('height', height + margin.top + margin.bottom)
-      .append<SVGGElement>('g')
-      .attr('transform', `translate(${margin.left},${margin.top})`);
+      const ctx = chartRef.current.getContext('2d');
+      if (ctx) {
+        chartInstanceRef.current = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: String(yKey), // Cast yKey to string to fix TS2322
+                data: values,
+                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { title: { display: true, text: String(xKey) } }, // Cast xKey to string
+              y: { title: { display: true, text: String(yKey) } }, // Cast yKey to string
+            },
+            plugins: {
+              title: { display: true, text: title },
+            },
+          },
+        });
+      }
+    }
 
-    const x = d3
-      .scaleBand()
-      .domain(data.map((d) => String(d[xKey])))
-      .range([0, width])
-      .padding(0.1);
-
-    const y = d3
-      .scaleLinear()
-      .domain([0, d3.max(data, (d) => Number(d[yKey])) || 0])
-      .nice()
-      .range([height, 0]);
-
-    svg
-      .selectAll('.bar')
-      .data(data)
-      .join('rect')
-      .attr('class', 'bar')
-      .attr('x', (d) => x(String(d[xKey])) || 0)
-      .attr('y', (d) => y(Number(d[yKey])))
-      .attr('width', x.bandwidth())
-      .attr('height', (d) => height - y(Number(d[yKey])))
-      .attr('fill', 'steelblue');
-
-    // Add x-axis
-    svg
-      .append('g')
-      .attr('class', 'x-axis')
-      .attr('transform', `translate(0,${height})`)
-      .call(d3.axisBottom(x) as unknown as (selection: d3.Selection<SVGGElement, unknown, null, undefined>) => void)
-      .selectAll('text')
-      .attr('transform', 'rotate(-45)')
-      .attr('text-anchor', 'end');
-
-    // Add y-axis
-    svg
-      .append('g')
-      .attr('class', 'y-axis')
-      .call(d3.axisLeft(y));
-
-    // Add title
-    svg
-      .append('text')
-      .attr('class', 'title')
-      .attr('x', width / 2)
-      .attr('y', -10)
-      .attr('text-anchor', 'middle')
-      .text(title);
+    return () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+      }
+    };
   }, [data, xKey, yKey, title]);
 
-  return <svg ref={svgRef}></svg>;
-}
+  useEffect(() => {
+    const handleResize = () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.resize();
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  return (
+    <Box sx={{ position: 'relative', width: '100%', height: '40vh' }}>
+      <canvas ref={chartRef} />
+    </Box>
+  );
+};
+
+export default BarChart;
