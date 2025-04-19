@@ -29,6 +29,7 @@ const api = axios.create({
     'Content-Type': 'application/json',
     'Accept': 'application/json',
     'Cache-Control': 'no-cache',
+    'Origin': 'https://my-dashboard-hobbits-projects-1895405b.vercel.app', // Explicitly set for debugging
   },
 });
 
@@ -46,8 +47,8 @@ axiosRetry(api, {
 const warmupBackend = async (attempts = 2, delay = 1000) => {
   for (let i = 0; i < attempts; i++) {
     try {
-      await api.get('/warmup', { timeout: 5000 });
-      console.info('Backend warmed up successfully');
+      const response = await api.get('/warmup', { timeout: 5000 });
+      console.info('Backend warmed up successfully', response.headers);
       return true;
     } catch (error) {
       let errorMessage = 'Warm-up failed';
@@ -102,6 +103,7 @@ export default function Dashboard() {
             }
           }
         });
+        console.info('Sending request with Origin:', api.defaults.headers['Origin']);
         const response = await api.get<{ data: DataItem[]; filters: FilterOptions }>(
           `/api/data?${params}`,
           {
@@ -110,19 +112,19 @@ export default function Dashboard() {
         );
         setData(response.data.data);
         setFilterOptions(response.data.filters);
-        console.info('Data fetched successfully:', response.data.data.length, 'items');
+        console.info('Data fetched successfully:', response.data.data.length, 'items', response.headers);
       } catch (error) {
         let errorMessage = 'Failed to fetch data. Please try again later.';
         if (error instanceof AxiosError) {
           if (!error.response && error.request) {
-            errorMessage = 'CORS error: Backend is not responding or misconfigured.';
+            errorMessage = 'CORS error: Backend is not responding or misconfigured. Missing Access-Control-Allow-Origin header.';
           } else {
             errorMessage = error.response
               ? `Server error: ${error.response.status} - ${error.response.data?.error || 'Unknown error'}`
               : 'No response from server. It may be starting up.';
           }
-          console.error('Fetch error:', errorMessage, error.response?.data);
-          Sentry.captureException(error, { extra: { errorMessage } });
+          console.error('Fetch error:', errorMessage, error.response?.data, error.response?.headers);
+          Sentry.captureException(error, { extra: { errorMessage, headers: error.response?.headers } });
         } else {
           console.error('Unexpected error:', error);
           Sentry.captureException(error);
