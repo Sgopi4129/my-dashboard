@@ -22,7 +22,7 @@ export default function WorldMap({ data }: WorldMapProps) {
       if (svgRef.current) {
         const parent = svgRef.current.parentElement;
         if (parent) {
-          const width = parent.clientWidth;
+          const width = parent.clientWidth || 300; // Fallback width
           const height = Math.min(width * 0.6, 600); // Maintain aspect ratio
           setDimensions({ width, height });
         }
@@ -72,7 +72,7 @@ export default function WorldMap({ data }: WorldMapProps) {
         const intensityByCountry = new Map<string, number>(
           d3
             .rollup(
-              data.filter((d) => d.country), // Ensure country exists
+              data.filter((d) => d.country),
               (v) => d3.mean(v, (d) => d.intensity) || 0,
               (d) => d.country!
             )
@@ -106,14 +106,14 @@ export default function WorldMap({ data }: WorldMapProps) {
           });
 
         // Zoom behavior
-        const zoom = d3
-          .zoom()
+        const zoom: d3.ZoomBehavior<SVGSVGElement, unknown> = d3
+          .zoom<SVGSVGElement, unknown>()
           .scaleExtent([1, 8])
           .on('zoom', (event) => {
             svg.selectAll('path').attr('transform', event.transform);
           });
 
-        svg.call(zoom as any);
+        svg.call(zoom);
       })
       .catch((err) => {
         console.error('Error loading TopoJSON:', err);
@@ -127,6 +127,7 @@ export default function WorldMap({ data }: WorldMapProps) {
         height: '100%',
         overflow: 'hidden',
         position: 'relative',
+        flex: 1,
       }}
     >
       <Typography
@@ -135,7 +136,7 @@ export default function WorldMap({ data }: WorldMapProps) {
       >
         World Map
       </Typography>
-      <svg ref={svgRef} style={{ width: '100%', height: 'auto' }} />
+      <svg ref={svgRef} style={{ width: '100%', height: '100%', display: 'block' }} />
     </Box>
   );
 }
