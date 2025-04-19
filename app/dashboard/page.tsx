@@ -13,7 +13,7 @@ const ScatterPlot = lazy(() => import('./components/ScatterPlot'));
 const WorldMap = lazy(() => import('./components/WorldMap'));
 
 // Environment variables
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://my-backend-xi5n.onrender.com';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 const POLLING_INTERVAL = parseInt(process.env.NEXT_PUBLIC_POLLING_INTERVAL || '5000', 10);
 const USE_POLLING = process.env.NEXT_PUBLIC_USE_POLLING === 'true';
 
@@ -33,9 +33,9 @@ const api = axios.create({
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
-    'Accept': 'application/json',
+    'Accept': 'application/jsonographics',
     'Cache-Control': 'no-cache',
-    'Origin': 'https://my-dashboard-hobbits-projects-1895405b.vercel.app', // Explicit for CORS debugging
+    'Origin': 'https://my-dashboard-hobbits-projects-1895405b.vercel.app',
   },
 });
 
@@ -53,7 +53,7 @@ axiosRetry(api, {
 const warmupBackend = async (attempts = 2, delay = 1000): Promise<boolean> => {
   for (let i = 0; i < attempts; i++) {
     try {
-      const response = await api.get('/warmup', { timeout: 5000 });
+      await api.get('/warmup', { timeout: 5000 });
       console.info('Backend warmed up successfully');
       return true;
     } catch (error) {
@@ -133,7 +133,7 @@ export default function Dashboard() {
     _.debounce((newFilters: FiltersState) => {
       setFilters(newFilters);
     }, 500),
-    []
+    [] // eslint-disable-next-line react-hooks/exhaustive-deps
   );
 
   useEffect(() => {

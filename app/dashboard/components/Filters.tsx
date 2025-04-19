@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import React, { useCallback } from 'react';
 import {
   Box,
   FormControl,
@@ -12,7 +12,6 @@ import {
   TextField,
 } from '@mui/material';
 import { FiltersState, FilterOptions } from '../types';
-import { useState as reactUseState } from 'react';
 
 interface FiltersProps {
   options: FilterOptions;
@@ -20,7 +19,7 @@ interface FiltersProps {
 }
 
 export default function Filters({ options, onFilterChange }: FiltersProps) {
-  const [filters, setFilters] = reactUseState<FiltersState>({});
+  const [filters, setFilters] = React.useState<FiltersState>({});
 
   const handleChange = useCallback(
     (key: keyof FiltersState, value: string | string[]) => {
@@ -28,7 +27,7 @@ export default function Filters({ options, onFilterChange }: FiltersProps) {
       setFilters(newFilters);
       onFilterChange(newFilters);
     },
-    [filters, onFilterChange]
+    [filters, onFilterChange, setFilters] // Added setFilters
   );
 
   return (
@@ -90,8 +89,4 @@ export default function Filters({ options, onFilterChange }: FiltersProps) {
       </Box>
     </Box>
   );
-}
-
-function useState<T>(arg0: {}): [any, any] {
-  throw new Error('Function not implemented.');
 }
