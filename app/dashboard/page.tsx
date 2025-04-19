@@ -18,7 +18,8 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<string | null>(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+  // Use relative path for proxy or direct backend URL
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api'; // Fallback to proxy
 
   const fetchData = useCallback(async (filters: FiltersState = {}) => {
     try {
@@ -30,12 +31,12 @@ export default function Dashboard() {
           query.append(key, String(value));
         }
       });
-      const response = await fetch(`${API_URL}/api/data?${query.toString()}`, {
+      const response = await fetch(`${API_URL}/data?${query.toString()}`, {
         method: 'GET',
-        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // Remove if credentials are not needed
       });
       if (!response.ok) {
         const errorData = await response.json();
@@ -55,10 +56,10 @@ export default function Dashboard() {
       try {
         const response = await fetch(`${API_URL}/health`, {
           method: 'GET',
-          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
           },
+          credentials: 'include', // Remove if credentials are not needed
         });
         if (!response.ok) throw new Error('Health check failed');
         const data = await response.json();
@@ -72,16 +73,6 @@ export default function Dashboard() {
 
     fetchHealth();
     fetchData();
-
-    // Log all fetch requests to identify /warmup source
-    const originalFetch = window.fetch;
-    window.fetch = async (...args) => {
-      console.log('Fetch called:', args);
-      return originalFetch(...args);
-    };
-    return () => {
-      window.fetch = originalFetch;
-    };
   }, [fetchData, API_URL]);
 
   const handleFilterChange = useCallback((filters: FiltersState) => {
@@ -105,12 +96,12 @@ export default function Dashboard() {
       relevance: 3
     }];
     try {
-      const response = await fetch(`${API_URL}/api/insert`, {
+      const response = await fetch(`${API_URL}/insert`, {
         method: 'POST',
-        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // Remove if credentials are not needed
         body: JSON.stringify(sampleData),
       });
       if (!response.ok) {
@@ -215,7 +206,6 @@ export default function Dashboard() {
           gap: { xs: 2, sm: 3, md: 4 },
         }}
       >
-        {/* Sidebar: Filters */}
         <Box
           sx={{
             flex: { xs: '1 1 100%', md: '1 1 25%' },
@@ -245,7 +235,6 @@ export default function Dashboard() {
             onFilterChange={handleFilterChange}
           />
         </Box>
-        {/* Main Content: Charts */}
         <Box
           sx={{
             flex: { xs: '1 1 100%', md: '1 1 75%' },
