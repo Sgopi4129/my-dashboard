@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react
 import axios, { AxiosError } from 'axios';
 import axiosRetry from 'axios-retry';
 import _ from 'lodash';
-import * as Sentry from '@sentry/nextjs';
 import Filters from './components/Filters';
 import { Box, Typography, CircularProgress, Alert, Button } from '@mui/material';
 import { DataItem, FilterOptions, FiltersState } from './types';
@@ -13,13 +12,20 @@ const BarChart = lazy(() => import('./components/BarChart'));
 const ScatterPlot = lazy(() => import('./components/ScatterPlot'));
 const WorldMap = lazy(() => import('./components/WorldMap'));
 
+// Environment variables
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://my-backend-xi5n.onrender.com';
 const POLLING_INTERVAL = parseInt(process.env.NEXT_PUBLIC_POLLING_INTERVAL || '5000', 10);
 const USE_POLLING = process.env.NEXT_PUBLIC_USE_POLLING === 'true';
 
+// Log environment variables for debugging
+console.log('Environment Variables:', {
+  NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+  NEXT_PUBLIC_POLLING_INTERVAL: process.env.NEXT_PUBLIC_POLLING_INTERVAL,
+  NEXT_PUBLIC_USE_POLLING: process.env.NEXT_PUBLIC_USE_POLLING,
+});
+
 if (!API_URL) {
-  console.error('NEXT_PUBLIC_API_URL is not defined. API requests will fail.');
-  Sentry.captureMessage('NEXT_PUBLIC_API_URL is not defined', 'error');
+  console.error('NEXT_PUBLIC_API_URL is not defined. Using fallback URL.');
 }
 
 const api = axios.create({
@@ -29,47 +35,43 @@ const api = axios.create({
     'Content-Type': 'application/json',
     'Accept': 'application/json',
     'Cache-Control': 'no-cache',
-    'Origin': 'https://my-dashboard-hobbits-projects-1895405b.vercel.app', // Explicitly set for debugging
+    'Origin': 'https://my-dashboard-hobbits-projects-1895405b.vercel.app', // Explicit for CORS debugging
   },
 });
 
 axiosRetry(api, {
-  retries: 3,
+  retries: 2,
   retryDelay: (retryCount: number) => retryCount * 1000,
   retryCondition: (error: AxiosError) => {
     return (
       axiosRetry.isNetworkOrIdempotentRequestError(error) ||
-      (error.response?.status ?? 0) >= 500
+      error.response?.status === 503
     );
   },
 });
 
-const warmupBackend = async (attempts = 2, delay = 1000) => {
+const warmupBackend = async (attempts = 2, delay = 1000): Promise<boolean> => {
   for (let i = 0; i < attempts; i++) {
     try {
       const response = await api.get('/warmup', { timeout: 5000 });
-      console.info('Backend warmed up successfully', response.headers);
+      console.info('Backend warmed up successfully');
       return true;
     } catch (error) {
-      let errorMessage = 'Warm-up failed';
-      if (error instanceof AxiosError) {
-        if (error.code === 'ECONNABORTED') {
-          errorMessage = 'Warm-up timed out';
-        } else if (!error.response && error.request) {
-          errorMessage = 'CORS error: Missing Access-Control-Allow-Origin header';
-        } else {
-          errorMessage = `Server error: ${error.response?.status || 'Unknown'}`;
-        }
-      }
-      console.warn(`Warm-up attempt ${i + 1} failed: ${errorMessage}`, error);
-      Sentry.captureException(error, { extra: { attempt: i + 1, errorMessage } });
+      const errorMessage =
+        error instanceof AxiosError
+          ? error.code === 'ECONNABORTED'
+            ? 'Warm-up timed out'
+            : !error.response && error.request
+            ? 'CORS error: Missing Access-Control-Allow-Origin header'
+            : `Server error: ${error.response?.status || 'Unknown'}`
+          : 'Warm-up failed';
+      console.warn(`Warm-up attempt ${i + 1} failed: ${errorMessage}`);
       if (i < attempts - 1) {
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
   console.error('All warm-up attempts failed. Backend may be slow or misconfigured.');
-  Sentry.captureMessage('All warm-up attempts failed', 'error');
   return false;
 };
 
@@ -103,43 +105,32 @@ export default function Dashboard() {
             }
           }
         });
-        console.info('Sending request with Origin:', api.defaults.headers['Origin']);
         const response = await api.get<{ data: DataItem[]; filters: FilterOptions }>(
-          `/api/data?${params}`,
-          {
-            headers: { 'If-Modified-Since': new Date().toUTCString() },
-          }
+          `/api/data?${params}`
         );
         setData(response.data.data);
         setFilterOptions(response.data.filters);
-        console.info('Data fetched successfully:', response.data.data.length, 'items', response.headers);
+        console.info('Data fetched successfully:', response.data.data.length, 'items');
       } catch (error) {
-        let errorMessage = 'Failed to fetch data. Please try again later.';
-        if (error instanceof AxiosError) {
-          if (!error.response && error.request) {
-            errorMessage = 'CORS error: Backend is not responding or misconfigured. Missing Access-Control-Allow-Origin header.';
-          } else {
-            errorMessage = error.response
+        const errorMessage =
+          error instanceof AxiosError
+            ? !error.response && error.request
+              ? 'CORS error: Backend is not responding or misconfigured. Missing Access-Control-Allow-Origin header.'
+              : error.response
               ? `Server error: ${error.response.status} - ${error.response.data?.error || 'Unknown error'}`
-              : 'No response from server. It may be starting up.';
-          }
-          console.error('Fetch error:', errorMessage, error.response?.data, error.response?.headers);
-          Sentry.captureException(error, { extra: { errorMessage, headers: error.response?.headers } });
-        } else {
-          console.error('Unexpected error:', error);
-          Sentry.captureException(error);
-        }
+              : 'No response from server. It may be starting up.'
+            : 'Failed to fetch data. Please try again later.';
+        console.error('Fetch error:', errorMessage);
         setError(errorMessage);
       } finally {
         setLoading(false);
       }
-    }, 1000),
+    }, 1500),
     [filters]
   );
 
   const handleFilterChange = useCallback(
     _.debounce((newFilters: FiltersState) => {
-      console.info('Filters updated:', newFilters);
       setFilters(newFilters);
     }, 500),
     []
