@@ -1,224 +1,185 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
-import axios, { AxiosError } from 'axios';
-import axiosRetry from 'axios-retry';
-import _ from 'lodash';
+import { useState, useEffect, useCallback } from 'react';
+import { Box, Grid, Typography } from '@mui/material';
+import BarChart from './components/BarChart';
 import Filters from './components/Filters';
-import { Box, Typography, CircularProgress, Alert, Button } from '@mui/material';
+import ScatterPlot from './components/ScatterPlot';
+import WorldMap from './components/WorldMap';
 import { DataItem, FilterOptions, FiltersState } from './types';
 
-const BarChart = lazy(() => import('./components/BarChart'));
-const ScatterPlot = lazy(() => import('./components/ScatterPlot'));
-const WorldMap = lazy(() => import('./components/WorldMap'));
-
-// Environment variables
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-const POLLING_INTERVAL = parseInt(process.env.NEXT_PUBLIC_POLLING_INTERVAL || '5000', 10);
-const USE_POLLING = process.env.NEXT_PUBLIC_USE_POLLING === 'true';
-
-// Log environment variables for debugging
-console.log('Environment Variables:', {
-  NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
-  NEXT_PUBLIC_POLLING_INTERVAL: process.env.NEXT_PUBLIC_POLLING_INTERVAL,
-  NEXT_PUBLIC_USE_POLLING: process.env.NEXT_PUBLIC_USE_POLLING,
-});
-
-if (!API_URL) {
-  console.error('NEXT_PUBLIC_API_URL is not defined. Using fallback URL.');
+interface DashboardData {
+  data: DataItem[];
+  filters: FilterOptions;
 }
 
-const api = axios.create({
-  baseURL: API_URL,
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/jsonographics',
-    'Cache-Control': 'no-cache',
-    'Origin': 'https://my-dashboard-hobbits-projects-1895405b.vercel.app',
-  },
-});
-
-axiosRetry(api, {
-  retries: 2,
-  retryDelay: (retryCount: number) => retryCount * 1000,
-  retryCondition: (error: AxiosError) => {
-    return (
-      axiosRetry.isNetworkOrIdempotentRequestError(error) ||
-      error.response?.status === 503
-    );
-  },
-});
-
-const warmupBackend = async (attempts = 2, delay = 1000): Promise<boolean> => {
-  for (let i = 0; i < attempts; i++) {
-    try {
-      await api.get('/warmup', { timeout: 5000 });
-      console.info('Backend warmed up successfully');
-      return true;
-    } catch (error) {
-      const errorMessage =
-        error instanceof AxiosError
-          ? error.code === 'ECONNABORTED'
-            ? 'Warm-up timed out'
-            : !error.response && error.request
-            ? 'CORS error: Missing Access-Control-Allow-Origin header'
-            : `Server error: ${error.response?.status || 'Unknown'}`
-          : 'Warm-up failed';
-      console.warn(`Warm-up attempt ${i + 1} failed: ${errorMessage}`);
-      if (i < attempts - 1) {
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-    }
-  }
-  console.error('All warm-up attempts failed. Backend may be slow or misconfigured.');
-  return false;
-};
-
 export default function Dashboard() {
-  const [data, setData] = useState<DataItem[]>([]);
-  const [filters, setFilters] = useState<FiltersState>({});
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-    end_years: [],
-    topics: [],
-    sectors: [],
-    regions: [],
-    pestles: [],
-    sources: [],
-    countries: [],
-  });
-  const [loading, setLoading] = useState(true);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [healthStatus, setHealthStatus] = useState<string | null>(null);
 
-  const fetchData = useCallback(
-    _.debounce(async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const params = new URLSearchParams();
-        Object.entries(filters).forEach(([key, value]) => {
-          if (value !== undefined && value !== '') {
-            if (Array.isArray(value)) {
-              value.forEach((val) => params.append(key, val));
-            } else {
-              params.append(key, value.toString());
-            }
-          }
-        });
-        const response = await api.get<{ data: DataItem[]; filters: FilterOptions }>(
-          `/api/data?${params}`
-        );
-        setData(response.data.data);
-        setFilterOptions(response.data.filters);
-        console.info('Data fetched successfully:', response.data.data.length, 'items');
-      } catch (error) {
-        const errorMessage =
-          error instanceof AxiosError
-            ? !error.response && error.request
-              ? 'CORS error: Backend is not responding or misconfigured. Missing Access-Control-Allow-Origin header.'
-              : error.response
-              ? `Server error: ${error.response.status} - ${error.response.data?.error || 'Unknown error'}`
-              : 'No response from server. It may be starting up.'
-            : 'Failed to fetch data. Please try again later.';
-        console.error('Fetch error:', errorMessage);
-        setError(errorMessage);
-      } finally {
-        setLoading(false);
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+  const fetchData = useCallback(async (filters: FiltersState = {}) => {
+    try {
+      const query = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          value.forEach((v) => query.append(key, String(v)));
+        } else if (value !== undefined && value !== null) {
+          query.append(key, String(value));
+        }
+      });
+      const response = await fetch(`${API_URL}/api/data?${query.toString()}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch data');
       }
-    }, 1500),
-    [filters]
-  );
-
-  const handleFilterChange = useCallback(
-    _.debounce((newFilters: FiltersState) => {
-      setFilters(newFilters);
-    }, 500),
-    [] // eslint-disable-next-line react-hooks/exhaustive-deps
-  );
+      const data = await response.json();
+      setDashboardData(data);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMessage);
+      console.error('Fetch data error:', errorMessage);
+    }
+  }, [API_URL]);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-
-    const initialize = async () => {
-      const warmedUp = await warmupBackend();
-      if (!warmedUp) {
-        setError('Backend may be slow or misconfigured. Please try again.');
-      }
-      fetchData();
-
-      if (USE_POLLING) {
-        interval = setInterval(fetchData, POLLING_INTERVAL);
+    const fetchHealth = async () => {
+      try {
+        const response = await fetch(`${API_URL}/health`, {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+        if (!response.ok) throw new Error('Health check failed');
+        const data = await response.json();
+        setHealthStatus(data.status);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        setError(errorMessage);
+        console.error('Fetch health error:', errorMessage);
       }
     };
 
-    initialize();
+    fetchHealth();
+    fetchData();
 
+    // Log all fetch requests to identify /warmup source
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+      console.log('Fetch called:', args);
+      return originalFetch(...args);
+    };
     return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-      fetchData.cancel();
+      window.fetch = originalFetch;
     };
+  }, [fetchData, API_URL]);
+
+  const handleFilterChange = useCallback((filters: FiltersState) => {
+    fetchData(filters);
   }, [fetchData]);
 
-  const chartComponents = useMemo(
-    () => (
-      <>
-        <Suspense fallback={<CircularProgress />}>
-          <BarChart data={data} xKey="topic" yKey="intensity" title="Intensity by Topic" />
-        </Suspense>
-        <Suspense fallback={<CircularProgress />}>
-          <ScatterPlot
-            data={data}
-            xKey="likelihood"
-            yKey="relevance"
-            colorKey="intensity"
-            title="Likelihood vs Relevance"
-          />
-        </Suspense>
-        <Suspense fallback={<CircularProgress />}>
-          <WorldMap data={data} />
-        </Suspense>
-      </>
-    ),
-    [data]
-  );
+  const handleInsert = async () => {
+    const sampleData = [{
+      end_year: "2025",
+      topic: "Test Topic",
+      sector: "Technology",
+      insight: "Test insight",
+      url: "https://example.com",
+      region: "Global",
+      country: "World",
+      pestle: "Technological",
+      source: "Test Source",
+      title: "Test Title",
+      likelihood: 4,
+      intensity: 5,
+      relevance: 3
+    }];
+    try {
+      const response = await fetch(`${API_URL}/api/insert`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(sampleData),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to insert data');
+      }
+      const data = await response.json();
+      alert(data.message);
+      fetchData();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMessage);
+      console.error('Insert data error:', errorMessage);
+    }
+  };
+
+  if (error) {
+    return (
+      <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Typography color="error">Error: {error}</Typography>
+      </Box>
+    );
+  }
+
+  if (!healthStatus) {
+    return (
+      <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Typography>Checking backend health...</Typography>
+      </Box>
+    );
+  }
 
   return (
-    <Box sx={{ padding: 4, maxWidth: '1200px', margin: '0 auto' }}>
-      <Typography variant="h4" gutterBottom>
-        Insights Dashboard
+    <Box sx={{ p: 4, maxWidth: '1200px', mx: 'auto' }}>
+      <Typography variant="h4" align="center" gutterBottom>
+        Dashboard
       </Typography>
-      {loading && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-          <CircularProgress />
-        </Box>
-      )}
-      {error && (
-        <Alert
-          severity="error"
-          sx={{ my: 2 }}
-          action={
-            <Button color="inherit" size="small" onClick={fetchData}>
-              Retry
-            </Button>
-          }
+      <Typography align="center" gutterBottom>
+        Backend Health: <strong>{healthStatus}</strong>
+      </Typography>
+      <Box sx={{ textAlign: 'center', mb: 4 }}>
+        <button
+          onClick={handleInsert}
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
         >
-          {error}
-        </Alert>
-      )}
-      {!loading && !error && (
-        <>
-          <Filters options={filterOptions} onFilterChange={handleFilterChange} />
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4, mt: 4, width: '100%' }}>
-            {data.length === 0 ? (
-              <Typography>No data available. Try adjusting filters.</Typography>
-            ) : (
-              chartComponents
-            )}
-          </Box>
-        </>
-      )}
+          Insert Test Data
+        </button>
+      </Box>
+      <Grid container spacing={4}>
+        <Grid component="div" xs={12} md={3}>
+          <Filters
+            options={dashboardData?.filters || { end_years: [], topics: [], sectors: [], regions: [], pestles: [], sources: [], countries: [] }}
+            onFilterChange={handleFilterChange}
+          />
+        </Grid>
+        <Grid component="div" xs={12} md={9}>
+          <Grid container spacing={4}>
+            <Grid component="div" xs={12}>
+              <BarChart data={dashboardData?.data || []} xKey="topic" yKey="intensity" title="Intensity by Topic" />
+            </Grid>
+            <Grid component="div" xs={12}>
+              <ScatterPlot data={dashboardData?.data || []} xKey="intensity" yKey="likelihood" colorKey="relevance" title="Intensity vs Likelihood" />
+            </Grid>
+            <Grid component="div" xs={12}>
+              <WorldMap data={dashboardData?.data || []} />
+            </Grid>
+          </Grid>
+        </Grid>
+      </Grid>
     </Box>
   );
 }
