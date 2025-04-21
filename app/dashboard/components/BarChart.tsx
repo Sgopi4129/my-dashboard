@@ -1,9 +1,8 @@
-// app/dashboard/components/BarChart.tsx
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import Chart from 'chart.js/auto';
-import { Box } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import { DataItem } from '../types';
 
 interface BarChartProps {
@@ -17,36 +16,42 @@ const BarChart = ({ data, xKey, yKey, title }: BarChartProps) => {
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstanceRef = useRef<Chart | null>(null);
 
+  // Memoize data processing to avoid recalculating on every render
+  const chartData = useMemo(() => {
+    if (data.length === 0) return { labels: [], values: [] };
+
+    const labelSet = new Set<string>();
+    data.forEach((item) => {
+      const label = item[xKey]?.toString() || '';
+      if (label) labelSet.add(label);
+    });
+    const labels = Array.from(labelSet);
+
+    const values = labels.map((label) =>
+      data
+        .filter((item) => item[xKey]?.toString() === label)
+        .reduce((sum, item) => sum + (Number(item[yKey]) || 0), 0)
+    );
+
+    return { labels, values };
+  }, [data, xKey, yKey]);
+
   useEffect(() => {
-    if (chartRef.current && data.length > 0) {
+    if (chartRef.current && chartData.labels.length > 0) {
       if (chartInstanceRef.current) {
         chartInstanceRef.current.destroy();
       }
-
-      // Create unique labels without spread operator to avoid TS2802
-      const labelSet = new Set<string>();
-      data.forEach((item) => {
-        const label = item[xKey]?.toString() || '';
-        if (label) labelSet.add(label);
-      });
-      const labels = Array.from(labelSet);
-
-      const values = labels.map((label) =>
-        data
-          .filter((item) => item[xKey]?.toString() === label)
-          .reduce((sum, item) => sum + (Number(item[yKey]) || 0), 0)
-      );
 
       const ctx = chartRef.current.getContext('2d');
       if (ctx) {
         chartInstanceRef.current = new Chart(ctx, {
           type: 'bar',
           data: {
-            labels,
+            labels: chartData.labels,
             datasets: [
               {
-                label: String(yKey), // Cast yKey to string to fix TS2322
-                data: values,
+                label: String(yKey),
+                data: chartData.values,
                 backgroundColor: 'rgba(54, 162, 235, 0.6)',
                 borderColor: 'rgba(54, 162, 235, 1)',
                 borderWidth: 1,
@@ -57,8 +62,8 @@ const BarChart = ({ data, xKey, yKey, title }: BarChartProps) => {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-              x: { title: { display: true, text: String(xKey) } }, // Cast xKey to string
-              y: { title: { display: true, text: String(yKey) } }, // Cast yKey to string
+              x: { title: { display: true, text: String(xKey) } },
+              y: { title: { display: true, text: String(yKey) } },
             },
             plugins: {
               title: { display: true, text: title },
@@ -73,7 +78,7 @@ const BarChart = ({ data, xKey, yKey, title }: BarChartProps) => {
         chartInstanceRef.current.destroy();
       }
     };
-  }, [data, xKey, yKey, title]);
+  }, [chartData, xKey, yKey, title]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -84,6 +89,16 @@ const BarChart = ({ data, xKey, yKey, title }: BarChartProps) => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  if (data.length === 0) {
+    return (
+      <Box sx={{ position: 'relative', width: '100%', height: '40vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Typography variant="body2" color="text.secondary">
+          No data available
+        </Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ position: 'relative', width: '100%', height: '40vh' }}>

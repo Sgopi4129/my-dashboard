@@ -1,9 +1,8 @@
-// app/dashboard/components/ScatterPlot.tsx
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import Chart from 'chart.js/auto';
-import { Box } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import { DataItem } from '../types';
 
 interface ScatterPlotProps {
@@ -18,8 +17,19 @@ const ScatterPlot = ({ data, xKey, yKey, colorKey, title }: ScatterPlotProps) =>
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstanceRef = useRef<Chart | null>(null);
 
+  // Memoize scatter plot data
+  const scatterData = useMemo(() => {
+    if (data.length === 0) return [];
+
+    return data.map((item) => ({
+      x: Number(item[xKey]),
+      y: Number(item[yKey]),
+      backgroundColor: `rgba(255, 99, 132, ${Number(item[colorKey]) / 100})`,
+    }));
+  }, [data, xKey, yKey, colorKey]);
+
   useEffect(() => {
-    if (chartRef.current && data.length > 0) {
+    if (chartRef.current && scatterData.length > 0) {
       if (chartInstanceRef.current) {
         chartInstanceRef.current.destroy();
       }
@@ -32,11 +42,7 @@ const ScatterPlot = ({ data, xKey, yKey, colorKey, title }: ScatterPlotProps) =>
             datasets: [
               {
                 label: title,
-                data: data.map((item) => ({
-                  x: Number(item[xKey]),
-                  y: Number(item[yKey]),
-                  backgroundColor: `rgba(255, 99, 132, ${Number(item[colorKey]) / 100})`,
-                })),
+                data: scatterData,
                 pointRadius: 5,
               },
             ],
@@ -45,8 +51,8 @@ const ScatterPlot = ({ data, xKey, yKey, colorKey, title }: ScatterPlotProps) =>
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-              x: { title: { display: true, text: String(xKey) } }, // Cast to string
-              y: { title: { display: true, text: String(yKey) } }, // Cast to string
+              x: { title: { display: true, text: String(xKey) } },
+              y: { title: { display: true, text: String(yKey) } },
             },
             plugins: {
               title: { display: true, text: title },
@@ -61,7 +67,7 @@ const ScatterPlot = ({ data, xKey, yKey, colorKey, title }: ScatterPlotProps) =>
         chartInstanceRef.current.destroy();
       }
     };
-  }, [data, xKey, yKey, colorKey, title]);
+  }, [scatterData, xKey, yKey, title]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -72,6 +78,16 @@ const ScatterPlot = ({ data, xKey, yKey, colorKey, title }: ScatterPlotProps) =>
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  if (data.length === 0) {
+    return (
+      <Box sx={{ position: 'relative', width: '100%', height: '40vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Typography variant="body2" color="text.secondary">
+          No data available
+        </Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ position: 'relative', width: '100%', height: '40vh' }}>

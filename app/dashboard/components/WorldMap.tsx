@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import * as d3 from 'd3';
 import * as topojson from 'topojson-client';
 import { Box, Typography } from '@mui/material';
@@ -16,14 +16,28 @@ export default function WorldMap({ data }: WorldMapProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
-  // Update dimensions on resize
+  // Memoize intensityByCountry calculation
+  const intensityByCountry = useMemo(() => {
+    if (data.length === 0) return new Map<string, number>();
+
+    return new Map<string, number>(
+      d3
+        .rollup(
+          data.filter((d) => d.country),
+          (v) => d3.mean(v, (d) => d.intensity) || 0,
+          (d) => d.country!
+        )
+        .entries()
+    );
+  }, [data]);
+
   useEffect(() => {
     const updateDimensions = () => {
       if (svgRef.current) {
         const parent = svgRef.current.parentElement;
         if (parent) {
-          const width = parent.clientWidth || 300; // Fallback width
-          const height = Math.min(width * 0.6, 600); // Maintain aspect ratio
+          const width = parent.clientWidth || 300;
+          const height = Math.min(width * 0.6, 600);
           setDimensions({ width, height });
         }
       }
@@ -35,12 +49,10 @@ export default function WorldMap({ data }: WorldMapProps) {
   }, []);
 
   useEffect(() => {
-    if (!svgRef.current || !dimensions.width || !data) return;
+    if (!svgRef.current || !dimensions.width || intensityByCountry.size === 0) return;
 
-    // Clear previous SVG content
     d3.select(svgRef.current).selectAll('*').remove();
 
-    // Set up SVG
     const { width, height } = dimensions;
     const svg = d3
       .select(svgRef.current)
@@ -49,7 +61,6 @@ export default function WorldMap({ data }: WorldMapProps) {
       .attr('viewBox', `0 0 ${width} ${height}`)
       .attr('preserveAspectRatio', 'xMidYMid meet');
 
-    // Load TopoJSON data
     d3.json<Topology>('https://unpkg.com/world-atlas@2.0.2/countries-110m.json')
       .then((topology) => {
         if (!topology) {
@@ -62,29 +73,15 @@ export default function WorldMap({ data }: WorldMapProps) {
           topology.objects.countries as GeometryObject
         ) as FeatureCollection<Geometry, { name: string }>;
 
-        // Map projection
         const projection = d3
           .geoMercator()
           .fitSize([width, height], countries);
         const path = d3.geoPath().projection(projection);
 
-        // Aggregate data by country, filtering out entries without country
-        const intensityByCountry = new Map<string, number>(
-          d3
-            .rollup(
-              data.filter((d) => d.country),
-              (v) => d3.mean(v, (d) => d.intensity) || 0,
-              (d) => d.country!
-            )
-            .entries()
-        );
-
-        // Color scale
         const colorScale = d3
           .scaleSequential(d3.interpolateBlues)
           .domain([0, d3.max([...intensityByCountry.values()]) || 10]);
 
-        // Draw map
         svg
           .selectAll('path')
           .data(countries.features)
@@ -105,7 +102,6 @@ export default function WorldMap({ data }: WorldMapProps) {
               : d.properties?.name || 'Unknown';
           });
 
-        // Zoom behavior
         const zoom: d3.ZoomBehavior<SVGSVGElement, unknown> = d3
           .zoom<SVGSVGElement, unknown>()
           .scaleExtent([1, 8])
@@ -118,7 +114,17 @@ export default function WorldMap({ data }: WorldMapProps) {
       .catch((err) => {
         console.error('Error loading TopoJSON:', err);
       });
-  }, [data, dimensions]);
+  }, [dimensions, intensityByCountry]);
+
+  if (data.length === 0) {
+    return (
+      <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Typography variant="body2" color="text.secondary">
+          No data available
+        </Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box

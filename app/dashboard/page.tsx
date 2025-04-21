@@ -1,12 +1,21 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Box, Typography, Button } from '@mui/material';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Box, Typography, Button, CircularProgress } from '@mui/material'; // Added CircularProgress
 import BarChart from './components/BarChart';
 import Filters from './components/Filters';
 import ScatterPlot from './components/ScatterPlot';
 import WorldMap from './components/WorldMap';
 import { DataItem, FilterOptions, FiltersState } from './types';
+
+// Debounce utility
+const debounce = <F extends (...args: any[]) => void>(func: F, wait: number) => {
+  let timeout: NodeJS.Timeout;
+  return (...args: Parameters<F>) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
+};
 
 interface DashboardData {
   data: DataItem[];
@@ -17,11 +26,12 @@ export default function Dashboard() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false); // Added loading state
 
-  // Use relative path for proxy or direct backend URL
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api'; // Fallback to proxy
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
 
   const fetchData = useCallback(async (filters: FiltersState = {}) => {
+    setIsLoading(true); // Set loading state
     try {
       const query = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
@@ -36,7 +46,7 @@ export default function Dashboard() {
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include', // Remove if credentials are not needed
+        credentials: 'include',
       });
       if (!response.ok) {
         const errorData = await response.json();
@@ -48,8 +58,13 @@ export default function Dashboard() {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMessage);
       console.error('Fetch data error:', errorMessage);
+    } finally {
+      setIsLoading(false); // Reset loading state
     }
   }, [API_URL]);
+
+  // Debounce the fetchData function to prevent rapid API calls
+  const debouncedFetchData = useCallback(debounce(fetchData, 500), [fetchData]);
 
   useEffect(() => {
     const fetchHealth = async () => {
@@ -59,7 +74,7 @@ export default function Dashboard() {
           headers: {
             'Content-Type': 'application/json',
           },
-          credentials: 'include', // Remove if credentials are not needed
+          credentials: 'include',
         });
         if (!response.ok) throw new Error('Health check failed');
         const data = await response.json();
@@ -76,8 +91,8 @@ export default function Dashboard() {
   }, [fetchData, API_URL]);
 
   const handleFilterChange = useCallback((filters: FiltersState) => {
-    fetchData(filters);
-  }, [fetchData]);
+    debouncedFetchData(filters); // Use debounced version
+  }, [debouncedFetchData]);
 
   const handleInsert = async () => {
     const sampleData = [{
@@ -101,7 +116,7 @@ export default function Dashboard() {
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include', // Remove if credentials are not needed
+        credentials: 'include',
         body: JSON.stringify(sampleData),
       });
       if (!response.ok) {
@@ -117,6 +132,21 @@ export default function Dashboard() {
       console.error('Insert data error:', errorMessage);
     }
   };
+
+  // Memoize filter options to prevent unnecessary re-renders
+  const filterOptions = useMemo(() => {
+    return (
+      dashboardData?.filters || {
+        end_years: [],
+        topics: [],
+        sectors: [],
+        regions: [],
+        pestles: [],
+        sources: [],
+        countries: [],
+      }
+    );
+  }, [dashboardData?.filters]);
 
   if (error) {
     return (
@@ -182,6 +212,7 @@ export default function Dashboard() {
           onClick={handleInsert}
           variant="contained"
           color="primary"
+          disabled={isLoading} // Disable button during loading
           sx={{
             px: 4,
             py: 1.5,
@@ -199,6 +230,14 @@ export default function Dashboard() {
           Insert Test Data
         </Button>
       </Box>
+      {isLoading && ( // Show loading indicator
+        <Box sx={{ textAlign: 'center', mb: 2 }}>
+          <CircularProgress size={24} />
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            Loading data...
+          </Typography>
+        </Box>
+      )}
       <Box
         sx={{
           display: 'flex',
@@ -221,17 +260,7 @@ export default function Dashboard() {
           }}
         >
           <Filters
-            options={
-              dashboardData?.filters || {
-                end_years: [],
-                topics: [],
-                sectors: [],
-                regions: [],
-                pestles: [],
-                sources: [],
-                countries: [],
-              }
-            }
+            options={filterOptions} // Use memoized options
             onFilterChange={handleFilterChange}
           />
         </Box>
