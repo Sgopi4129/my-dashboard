@@ -1,15 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Box, Typography, Button, CircularProgress } from '@mui/material'; // Added CircularProgress
+import { Box, Typography, Button, CircularProgress } from '@mui/material';
 import BarChart from './components/BarChart';
 import Filters from './components/Filters';
 import ScatterPlot from './components/ScatterPlot';
 import WorldMap from './components/WorldMap';
 import { DataItem, FilterOptions, FiltersState } from './types';
 
-// Debounce utility
-const debounce = <F extends (...args: any[]) => void>(func: F, wait: number) => {
+// Debounce utility with explicit type for arguments
+const debounce = <F extends (...args: never[]) => void>(func: F, wait: number) => {
   let timeout: NodeJS.Timeout;
   return (...args: Parameters<F>) => {
     clearTimeout(timeout);
@@ -26,12 +26,12 @@ export default function Dashboard() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false); // Added loading state
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
 
   const fetchData = useCallback(async (filters: FiltersState = {}) => {
-    setIsLoading(true); // Set loading state
+    setIsLoading(true);
     try {
       const query = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
@@ -59,12 +59,15 @@ export default function Dashboard() {
       setError(errorMessage);
       console.error('Fetch data error:', errorMessage);
     } finally {
-      setIsLoading(false); // Reset loading state
+      setIsLoading(false);
     }
   }, [API_URL]);
 
-  // Debounce the fetchData function to prevent rapid API calls
-  const debouncedFetchData = useCallback(debounce(fetchData, 500), [fetchData]);
+  // Inline debounce to satisfy exhaustive-deps
+  const debouncedFetchData = useCallback((filters: FiltersState) => {
+    const handler = debounce(fetchData, 500);
+    handler(filters);
+  }, [fetchData]);
 
   useEffect(() => {
     const fetchHealth = async () => {
@@ -91,7 +94,7 @@ export default function Dashboard() {
   }, [fetchData, API_URL]);
 
   const handleFilterChange = useCallback((filters: FiltersState) => {
-    debouncedFetchData(filters); // Use debounced version
+    debouncedFetchData(filters);
   }, [debouncedFetchData]);
 
   const handleInsert = async () => {
@@ -133,7 +136,6 @@ export default function Dashboard() {
     }
   };
 
-  // Memoize filter options to prevent unnecessary re-renders
   const filterOptions = useMemo(() => {
     return (
       dashboardData?.filters || {
@@ -212,7 +214,7 @@ export default function Dashboard() {
           onClick={handleInsert}
           variant="contained"
           color="primary"
-          disabled={isLoading} // Disable button during loading
+          disabled={isLoading}
           sx={{
             px: 4,
             py: 1.5,
@@ -230,7 +232,7 @@ export default function Dashboard() {
           Insert Test Data
         </Button>
       </Box>
-      {isLoading && ( // Show loading indicator
+      {isLoading && (
         <Box sx={{ textAlign: 'center', mb: 2 }}>
           <CircularProgress size={24} />
           <Typography variant="body2" sx={{ mt: 1 }}>
@@ -260,7 +262,7 @@ export default function Dashboard() {
           }}
         >
           <Filters
-            options={filterOptions} // Use memoized options
+            options={filterOptions}
             onFilterChange={handleFilterChange}
           />
         </Box>
